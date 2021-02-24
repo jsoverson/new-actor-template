@@ -1,0 +1,6 @@
+namespace "example:interface"
+
+interface {
+  Validate{input: string}: bool
+}
+

@@ -1,0 +1,54 @@
+[env]
+CARGO_BUILD_PROFILE = "debug"
+ 
+[env.production]
+CARGO_BUILD_PROFILE = "release"
+CARGO_BUILD_RELEASE_FLAG = "--release"
+
+[config]
+skip_core_tasks = true
+
+[tasks.default]
+dependencies = [
+  "build",
+  "post-build"
+]
+
+[tasks.build]
+command = "cargo"
+args = ["build", "--all-features", "@@remove-empty(CARGO_BUILD_RELEASE_FLAG)"]
+
+[tasks.post-build]
+run_task = "sign"
+
+[tasks.get_metadata]
+script_runner = "@duckscript"
+script = '''
+cargo_metadata = exec cargo metadata --no-deps --format-version 1
+package = json_parse "${cargo_metadata.stdout}"
+arr_range = range 0 ${package.packages[0].metadata.wasmcloud.capabilities.length}
+capabilities = array
+for index in ${arr_range}
+    value = get_by_name package.packages[0].metadata.wasmcloud.capabilities[${index}]
+    array_push ${capabilities} "--cap=${value}"
+end
+capability_string = array_join ${capabilities} |
+set_env WASMCLOUD_CAPABILITIES ${capability_string}
+'''
+
+[tasks.sign]
+dependencies = ["get_metadata"]
+command = "wash"
+args = [
+  "claims", 
+  "sign", 
+  "target/${CARGO_MAKE_CRATE_TARGET_TRIPLE}/${CARGO_BUILD_PROFILE}/${CARGO_MAKE_CRATE_FS_NAME}.wasm",
+  "@@split(WASMCLOUD_CAPABILITIES,|)",
+  "--name=${CARGO_MAKE_PROJECT_NAME}",
+  "--ver=${CARGO_MAKE_PROJECT_VERSION}",
+  "--rev=0"
+  ]
+
+[tasks.interface]
+command = "wapc" 
+args = ["generate", "./etc/wapc.yaml"]
